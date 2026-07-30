@@ -1,7 +1,7 @@
 from pathlib import Path
 import json
-import gc
-import logging
+import os
+import time
 
 import whisper
 import pydub
@@ -18,10 +18,10 @@ from app.utils.helper import (
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
+from app.logging_config import get_logger
 
 load_dotenv()
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class WhisperProcessor:
@@ -51,9 +51,11 @@ class WhisperProcessor:
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
         else:
             self.device = device
+        logger.info("Loading Whisper model %s on %s", model_name, self.device)
         self.model = whisper.load_model(
             model_name, device=self.device, download_root=str(ARTIFACT_DIR)
         )
+        self._postprocess_llm = None
 
     def _preprocess_audio(
         self,
@@ -86,6 +88,7 @@ class WhisperProcessor:
             file_path (str | Path): Path to the audio file.
         """
         file_path = Path(file_path)
+        total_start = time.perf_counter()
         try:
             temp_dir = TEMP_DIR / next(
                 key
@@ -94,6 +97,7 @@ class WhisperProcessor:
             )
             ensure_temp_dir(temp_dir)
             output_file = self.output_dir / f"{file_path.stem}.json"
+            ensure_temp_dir(self.output_dir)
 
             if not self.overwrite and check_json_file_exists(output_file):
                 logger.info(
@@ -123,14 +127,22 @@ class WhisperProcessor:
                 "info", f"Post-processing transcription for {file_path.name}"
             )
             # Post-process the transcribed text
-            for segment in chunked_result["content"]:
-                segment["content"] = self._text_postprocess(segment["content"])
+            if self._can_use_postprocess_llm():
+                for segment in chunked_result["content"]:
+                    segment["content"] = self._text_postprocess(segment["content"])
+            else:
+                logger.info(
+                    "Skipping Gemini transcript post-processing because credentials are not configured."
+                )
+
+            chunked_result["total_time"] = round(time.perf_counter() - total_start, 2)
 
             with open(output_file, "w+", encoding="utf-8") as f:
                 json.dump(chunked_result, f, ensure_ascii=False, indent=4)
 
             yield log_process(
-                "success", f"Transcription completed for {file_path.name}"
+                "success",
+                f"Transcription completed for {file_path.name} in {chunked_result['total_time']:.2f} seconds",
             )
 
         except StopIteration:
@@ -176,6 +188,7 @@ class WhisperProcessor:
 
         while start < max_end:
             end = start + chunk_length_sec
+            actual_end = min(end, max_end)
             texts = []
             for segment in segments:
                 seg_start = segment["start"]
@@ -187,7 +200,8 @@ class WhisperProcessor:
                     {
                         "segment": len(result_json["content"]),
                         "start_time": start,
-                        "end_time": end,
+                        "end_time": actual_end,
+                        "duration": round(actual_end - start, 2),
                         "content": " ".join(texts),
                     }
                 )
@@ -197,16 +211,24 @@ class WhisperProcessor:
 
     def _text_postprocess(self, text: str) -> str:
         """Post-process the transcribed text."""
-        # Implement any specific post-processing if needed
-        llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
+        if self._postprocess_llm is None:
+            api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+            self._postprocess_llm = ChatGoogleGenerativeAI(
+                model="gemini-2.5-flash",
+                google_api_key=api_key,
+            )
         message = HumanMessage(
             content=f"Perbaiki transkrip ini ke dalam bahasa Indonesia baku dan jelas. Berikan hasilnya langsung, tanpa pembuka, penjelasan, atau penutup. \n {text}"
         )
 
-        response = llm.invoke([message])
+        response = self._postprocess_llm.invoke([message])
         response_text = response.content.strip()
 
         return response_text
+
+    @staticmethod
+    def _can_use_postprocess_llm() -> bool:
+        return bool(os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY"))
 
 
 if __name__ == "__main__":

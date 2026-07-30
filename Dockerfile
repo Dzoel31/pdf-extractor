@@ -21,10 +21,15 @@ ENV PATH="/root/.local/bin/:$PATH"
 # Set working directory
 WORKDIR /app
 
-# Copy only requirements file and install dependencies
-COPY requirements.txt .
-RUN --mount=type=cache,target=/root/.cache/pip uv pip install --no-cache-dir torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cpu --system
-RUN --mount=type=cache,target=/root/.cache/pip uv pip install --no-cache-dir -r requirements.txt --system
+# Copy only requirements files and install CPU-safe dependencies
+COPY requirements-cpu.txt requirements-cpu-constraints.txt ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --no-cache-dir \
+    --constraint requirements-cpu-constraints.txt \
+    --extra-index-url https://download.pytorch.org/whl/cpu \
+    --index-strategy unsafe-best-match \
+    -r requirements-cpu.txt \
+    --system
 
 # --- Final Stage ---
 FROM python:3.12-slim-bookworm
@@ -59,4 +64,4 @@ RUN chmod +x /entrypoint.sh
 EXPOSE 8501
 
 # Start Streamlit app
-CMD ["streamlit", "run", "app/dashboard.py", "--server.port=8501", "--server.address=0.0.0.0"]
+CMD ["streamlit", "run", "dashboard.py", "--server.port=8501", "--server.address=0.0.0.0"]

@@ -10,13 +10,12 @@ import requests
 import pandas as pd
 import json
 import pymupdf
-import logging
 import csv
 
 from app.config import TEMP_DIR, TEMP_DIR_MAP
+from app.logging_config import get_logger
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def ensure_temp_dir(dir_name: Union[str, Path, List[str], List[Path]] = TEMP_DIR):
@@ -48,6 +47,13 @@ def log_process(status: str, message: str) -> dict:
         "message": message,
     }
 
+
+def safe_filename(filename: str, fallback: str = "downloaded_file") -> str:
+    name = Path(filename).name.strip()
+    name = re.sub(r"[^A-Za-z0-9._-]+", "_", name)
+    name = name.strip("._")
+    return name or fallback
+
 def check_json_file_exists(file_path: Union[str, Path]) -> bool:
     """
     Checks if a JSON file exists and has content.
@@ -62,9 +68,13 @@ def check_json_file_exists(file_path: Union[str, Path]) -> bool:
     if file_path.exists():
         try:
             json_content = json.loads(file_path.read_text(encoding="utf-8"))
-            total_pages = json_content.get("total_pages", 0) or 0
-            total_page_extracted = len(json_content.get("content", [])) or 0
-            return total_pages == total_page_extracted
+            content_count = len(json_content.get("content", [])) or 0
+            expected_count = (
+                json_content.get("total_pages")
+                or json_content.get("total_segments")
+                or 0
+            )
+            return bool(expected_count) and expected_count == content_count
         except ValueError:
             return False
     return False
@@ -108,7 +118,7 @@ class Downloader:
         timeout (int): The timeout for the download request.
         stream (bool): Whether to stream the download.
     """
-    def __init__(self, url: str | pd.DataFrame, url_column: Optional[str] = None, url_id: Optional[str] = None, timeout: int = 10, stream: bool = True):
+    def __init__(self, url: str | pd.DataFrame, url_column: Optional[str] = None, url_id: Optional[str] = None, timeout: int = 20, stream: bool = True):
         self.timeout = timeout
         self.stream = stream
 
@@ -153,9 +163,19 @@ class Downloader:
         ensure_temp_dir(TEMP_DIR)
 
         for url in self.urls:
+            if not isinstance(url, str) or not url.strip():
+                logger.warning("Skipping empty URL from dataset.")
+                yield log_process("error", "Empty URL found. Skipping download...")
+                continue
             self.url = url
-            self.filepath = Path(urlparse(url).path)
-            self.filename = self.filepath.name
+            parsed_url = urlparse(url)
+            if parsed_url.scheme not in {"http", "https"}:
+                logger.warning("Unsupported URL scheme for %s", parsed_url.geturl())
+                yield log_process("error", f"Unsupported URL scheme: {parsed_url.scheme}")
+                continue
+
+            self.filepath = Path(parsed_url.path)
+            self.filename = safe_filename(self.filepath.name)
             try:
                 self.dirpath = TEMP_DIR / next(
                     key
@@ -177,36 +197,45 @@ class Downloader:
                     )
                     response.raise_for_status()  # Raise an error for bad responses
 
-                    if self.url_id:  # overwrite filename with url_id
-                        self.filename = f"{self.url_id}{self.filepath.suffix}"
+                    if self.url_id:
+                        self.filename = safe_filename(f"{self.url_id}{self.filepath.suffix}")
+
+                    ensure_temp_dir(self.dirpath)
 
                     with open(self.dirpath / self.filename, "wb") as f:
                         for chunk in response.iter_content(chunk_size=8192):
-                            f.write(chunk)
+                            if chunk:
+                                f.write(chunk)
                     time.sleep(
                         random.uniform(0.5, 1.5)
                     )  # Random sleep to avoid rate limiting
-                    logger.info(f"✅ Downloaded {self.filename} successfully.")
-                    yield log_process("success", f"✅ Downloaded {self.filename}")
+                    logger.info("Downloaded %s successfully.", self.filename)
+                    yield log_process("success", f"Downloaded {self.filename}")
 
                     # Check if the downloaded file is a valid PDF (only for PDF files)
                     if self.filepath.suffix.lower() == ".pdf":
                         if not self._is_pdf_valid(self.dirpath / self.filename):
-                            logger.error(f"Invalid PDF file: {self.filename}")
+                            logger.error("Invalid PDF file: %s", self.filename)
                             yield log_process(
                                 "error",
-                                f"❌ Invalid PDF file: {self.filename}. Trying to download again...",
+                                f"Invalid PDF file: {self.filename}. Trying to download again...",
                             )
                             os.remove(self.dirpath / self.filename)
                             continue  # Retry download
                     break
 
                 except requests.RequestException as e:
-                    logger.error(f"Attempt {attempt} failed: {e}")
+                    logger.warning(
+                        "Download attempt %s/%s failed for %s: %s",
+                        attempt,
+                        self.max_retries,
+                        self.filename,
+                        e,
+                    )
                     if attempt == self.max_retries:
                         yield log_process(
                             "error",
-                            f"❌ Failed to download {self.filename} after {self.max_retries} attempts.",
+                            f"Failed to download {self.filename} after {self.max_retries} attempts.",
                         )
                     time.sleep(random.uniform(0.5, 1.5))
 
@@ -221,5 +250,5 @@ class Downloader:
                     return False
             return True
         except Exception as e:
-            logger.error(f"Error validating PDF {file_path}: {e}")
+            logger.exception("Error validating PDF %s: %s", file_path, e)
             return False

@@ -4,17 +4,23 @@ from app.config import YOLO_DIR
 from pymupdf import Page, Rect, Matrix
 from PIL import Image
 from typing import Union, List, Tuple, Optional
-import logging
+from functools import lru_cache
+from app.logging_config import get_logger
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+
+
+@lru_cache(maxsize=2)
+def _load_yolo_model(model_path: str):
+    return YOLO(model_path)
 
 class YoloProcessor:
     def __init__(self, model_path: Optional[str | Path] = None):
         if not model_path:
             model_path = self.get_latest_model()
-        logger.info(f"Loaded YOLO model from {Path(model_path).stem}")
-        self.model = YOLO(model_path)
+        model_path = Path(model_path).resolve()
+        logger.info("Loading YOLO model: %s", model_path.name)
+        self.model = _load_yolo_model(str(model_path))
 
     def get_latest_model(self) -> Path:
         """Get the latest YOLO model file from the YOLO directory."""

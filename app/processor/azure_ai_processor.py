@@ -1,7 +1,6 @@
 import logging
 import os
 import re
-import base64
 import time
 import json
 import gc
@@ -12,7 +11,6 @@ from dotenv import load_dotenv
 from PIL import Image
 
 import fitz  # pymupdf
-from ultralytics import YOLO
 from azure.core.credentials import AzureKeyCredential
 from azure.ai.documentintelligence import DocumentIntelligenceClient
 from azure.ai.documentintelligence.models import AnalyzeDocumentRequest
@@ -22,12 +20,13 @@ from app.utils.helper import (
     check_json_file_exists,
     ensure_temp_dir,
 )
-from app.config import TEMP_DIR, OUTPUT_DIR, TEMP_DIR_MAP
+from app.config import TEMP_DIR, OUTPUT_DIR
+from app.logging_config import get_logger
+from app.processor.yolo_processor import YoloProcessor
 
 load_dotenv()
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 for name in logging.root.manager.loggerDict:
     if name.startswith("azure"):
@@ -36,14 +35,18 @@ for name in logging.root.manager.loggerDict:
 
 class AzureAIProcessor:
     def __init__(self, endpoint: str, key: str, yolo_model_path="app/yolo/best-1.pt"):
+        if not endpoint or not key:
+            raise ValueError(
+                "Azure Document Intelligence credentials are missing. "
+                "Set AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT and AZURE_DOCUMENT_INTELLIGENCE_KEY."
+            )
         self.client = DocumentIntelligenceClient(
             endpoint=endpoint, credential=AzureKeyCredential(key)
         )
         self.endpoint = endpoint
-        self.key = key
         self.output_dir = OUTPUT_DIR / "azure_document_intelligence"
         self.temp_pdf_dir = TEMP_DIR / "processed_pdf"
-        self.yolo_model = YOLO(yolo_model_path)
+        self.yolo_model = YoloProcessor(yolo_model_path).model
 
     @staticmethod
     def clean_text(text):
@@ -54,17 +57,24 @@ class AzureAIProcessor:
     @staticmethod
     def extract_table_contents(table_dict):
         table = next(iter(table_dict.values()))
-        row_count, col_count = table.get("rowCount"), table.get("columnCount")
+        row_count = table.get("rowCount") or table.get("row_count") or 0
+        col_count = table.get("columnCount") or table.get("column_count") or 0
         table_contents = [["" for _ in range(col_count)] for _ in range(row_count)]
-        for cell in table["cells"]:
-            row, col, content = cell["rowIndex"], cell["columnIndex"], cell["content"]
-            if "columnSpan" in cell:
-                span = cell["columnSpan"]
+        for cell in table.get("cells", []):
+            row = cell.get("rowIndex", cell.get("row_index"))
+            col = cell.get("columnIndex", cell.get("column_index"))
+            content = cell.get("content", "")
+            if row is None or col is None:
+                continue
+            if "columnSpan" in cell or "column_span" in cell:
+                span = cell.get("columnSpan", cell.get("column_span", 1))
                 combined = f"[{content}]"
                 for c in range(col, col + span):
-                    table_contents[row][c] = combined
+                    if row < row_count and c < col_count:
+                        table_contents[row][c] = combined
             else:
-                table_contents[row][col] = content
+                if row < row_count and col < col_count:
+                    table_contents[row][col] = content
         return table_contents
 
     @staticmethod
@@ -98,40 +108,37 @@ class AzureAIProcessor:
             return None
         filename = f"masked_table_page_{page_number}.pdf"
         output_path = os.path.join(output_folder, filename)
-        original_doc = fitz.open(local_pdf_path)
-        new_doc = fitz.open()
-        new_doc.insert_pdf(
-            original_doc,
-            from_page=page_number - 1,
-            to_page=page_number - 1,
-            links=False,
-            widgets=False,
-        )
-        new_page = new_doc[-1]
-        for poly in bounding_polygons:
-            if len(poly) < 8:
-                logger.warning(f"[SKIP] Polygon coordinates anomaly: {poly}")
-                continue
-            x_coords, y_coords = poly[0::2], poly[1::2]
-            x1, y1, x2, y2 = min(x_coords), min(y_coords), max(x_coords), max(y_coords)
-            dpi = 72
-            rect = fitz.Rect(x1 * dpi, y1 * dpi, x2 * dpi, y2 * dpi)
-            new_page.add_redact_annot(rect, fill=(1, 1, 1))
-        new_page.apply_redactions()
-        new_doc.save(output_path)
-        new_doc.close()
-        original_doc.close()
-        logger.info(f"[SAVED] Successfully masked table page and saved to: {output_path}")
+        with fitz.open(local_pdf_path) as original_doc, fitz.open() as new_doc:
+            new_doc.insert_pdf(
+                original_doc,
+                from_page=page_number - 1,
+                to_page=page_number - 1,
+                links=False,
+                widgets=False,
+            )
+            new_page = new_doc[-1]
+            for poly in bounding_polygons:
+                if len(poly) < 8:
+                    logger.warning("Skipping anomalous polygon coordinates: %s", poly)
+                    continue
+                x_coords, y_coords = poly[0::2], poly[1::2]
+                x1, y1, x2, y2 = min(x_coords), min(y_coords), max(x_coords), max(y_coords)
+                dpi = 72
+                rect = fitz.Rect(x1 * dpi, y1 * dpi, x2 * dpi, y2 * dpi)
+                new_page.add_redact_annot(rect, fill=(1, 1, 1))
+            new_page.apply_redactions()
+            new_doc.save(output_path)
+        logger.info("Masked table page saved to %s", output_path)
         return output_path
 
     @staticmethod
     def page_to_image(pdf_path, page_number=0, dpi=300):
-        doc = fitz.open(pdf_path)
-        page = doc[page_number]
-        zoom = dpi / 72
-        matrix = fitz.Matrix(zoom, zoom)
-        pix = page.get_pixmap(matrix=matrix)
-        return Image.frombytes("RGB", [pix.width, pix.height], pix.samples), zoom
+        with fitz.open(pdf_path) as doc:
+            page = doc[page_number]
+            zoom = dpi / 72
+            matrix = fitz.Matrix(zoom, zoom)
+            pix = page.get_pixmap(matrix=matrix)
+            return Image.frombytes("RGB", [pix.width, pix.height], pix.samples), zoom
 
     def mask_image_with_yolo(self, image, page_number, output_folder="temp"):
         import cv2
@@ -162,7 +169,7 @@ class AzureAIProcessor:
                 continue
         masked_pil = Image.fromarray(cv2.cvtColor(masked_cv, cv2.COLOR_BGR2RGB))
         masked_pil.save(output_path, "PDF", resolution=300.0)
-        logger.info(f"[SAVED] Successfully masked YOLO page and saved to: {output_path}")
+        logger.info("Masked YOLO page saved to %s", output_path)
         return masked_pil, output_path
 
     def get_doc_intelligent_result(self, file, model="prebuilt-layout"):
@@ -172,11 +179,13 @@ class AzureAIProcessor:
                 poller = self.client.begin_analyze_document(model, request)
             else:
                 with open(file, "rb") as f:
-                    base64_encoded_pdf = base64.b64encode(f.read()).decode("utf-8")
-                content = {"base64Source": base64_encoded_pdf}
-                poller = self.client.begin_analyze_document(model, analyze_request=content)
+                    poller = self.client.begin_analyze_document(
+                        model,
+                        body=f,
+                        content_type="application/pdf",
+                    )
         except Exception as e:
-            logger.error(f"[ERROR] Failed to create poller: {e}")
+            logger.exception("Failed to create Azure poller: %s", e)
             return None
         return poller.result()
 
@@ -222,6 +231,8 @@ class AzureAIProcessor:
         text_without_table = self.get_doc_intelligent_result(
             str(output_path_exclude_object)
         )
+        if text_without_table is None:
+            return page_text
         for p in text_without_table.pages:
             for line in p.lines:
                 page_text.append(line.content)
@@ -237,6 +248,14 @@ class AzureAIProcessor:
         """
         all_confidences = [word.confidence for word in page.words]
         return round(sum(all_confidences) / len(all_confidences), 4) if all_confidences else 0.0
+
+    @staticmethod
+    def _as_dict(value):
+        if hasattr(value, "as_dict"):
+            return value.as_dict()
+        if hasattr(value, "model_dump"):
+            return value.model_dump()
+        return value
 
     def transcribe_pdf(self, file: str, overwrite=True):
         """ Transcribe a PDF file using Azure Document Intelligence.
@@ -264,16 +283,27 @@ class AzureAIProcessor:
                 "total_time": 0,
             }
             result = self.get_doc_intelligent_result(file)
+            if result is None:
+                raise RuntimeError("Azure Document Intelligence did not return a result.")
             page_count = len(result.pages)
-            logger.info(f"\n\n📘 Starting to read file: {file_name} | Total pages: {page_count} -----")
+            logger.info("Starting Azure extraction for %s with %s pages.", file_name, page_count)
             detected_tables = []
             if getattr(result, "tables", None):
                 for i, table in enumerate(result.tables, 1):
+                    table_data = self._as_dict(table)
                     table_key = f"table_{i}"
-                    bounding_region = table.get("boundingRegions", [{}])[0]
-                    page_number = bounding_region.get("pageNumber")
+                    bounding_regions = (
+                        table_data.get("boundingRegions")
+                        or table_data.get("bounding_regions")
+                        or [{}]
+                    )
+                    bounding_region = bounding_regions[0]
+                    page_number = (
+                        bounding_region.get("pageNumber")
+                        or bounding_region.get("page_number")
+                    )
                     polygon = bounding_region.get("polygon", [])
-                    table_dict = {table_key: table}
+                    table_dict = {table_key: table_data}
                     content = self.extract_table_contents(table_dict)
                     detected_tables.append(
                         {
@@ -286,30 +316,30 @@ class AzureAIProcessor:
             result_json["total_pages"] = page_count
             pages_with_tables = {table["page"] for table in detected_tables}
             pages_str = ", ".join(str(page) for page in sorted(pages_with_tables))
-            logger.info(f"File contains tables on pages {pages_str}\n")
+            logger.info("File %s contains tables on pages: %s", file_name, pages_str or "-")
 
             local_pdf_path = self.download_pdf_if_url(file) if isinstance(file, str) and file.startswith("http") else file
 
             total_page_time = 0
             for page in result.pages:
-                logger.info(f"\n---- Processing Page #{page.page_number} ----")
+                logger.info("Processing Azure page %s/%s for %s", page.page_number, page_count, file_name)
                 page_number = page.page_number
                 page_start_time = time.time()
                 if page_number in pages_with_tables:
-                    logger.info("\n Page contains a table, using Table conversion algorithm")
+                    logger.info("Page %s contains table(s).", page_number)
                     page_text = self.process_page_with_table(
                         page_number, detected_tables, local_pdf_path, self.temp_pdf_dir
                     )
                 else:
-                    logger.info("\n Page does not contain a table, using Non-Table conversion algorithm")
+                    logger.info("Page %s does not contain tables.", page_number)
                     page_text = self.process_page_without_table(
                         page, local_pdf_path, self.temp_pdf_dir
                     )
                 full_text = self.clean_text("\n".join(page_text))
                 avg_confidence = self.compute_avg_confidence(page)
-                logger.info(f"📄 Page {page_number} - Average confidence score: {avg_confidence}")
+                logger.info("Page %s average confidence score: %s", page_number, avg_confidence)
 
-                elapsed_time = time.time() - page_start_time
+                elapsed_time = round(time.time() - page_start_time, 2)
                 total_page_time += elapsed_time
                 result_json["content"].append(
                     {
@@ -331,26 +361,24 @@ class AzureAIProcessor:
                 with open(output_json_path, "w", encoding="utf-8") as f:
                     json.dump(result_json, f, ensure_ascii=False, indent=2)
 
-            result_json["total_time"] = total_page_time
+            result_json["total_time"] = round(total_page_time, 2)
 
             with open(output_json_path, "w", encoding="utf-8") as f:
                 json.dump(result_json, f, ensure_ascii=False, indent=2)
 
-            total_minutes, total_seconds = divmod(total_page_time, 60)
+            total_minutes, total_seconds = divmod(result_json["total_time"], 60)
             yield log_process(
                 "success",
                 f"Total time for all pages: {int(total_minutes)} minutes {total_seconds:.2f} seconds",
             )
-            logger.info(
-                f"✅ All transcription results for file {file_name} have been saved to: {output_json_path}"
-            )
+            logger.info("Azure extraction results for %s saved to %s", file_name, output_json_path)
 
         except Exception as e:
             yield log_process(
                 "error",
                 f"An error occurred during transcription: {str(e)}"
             )
-            logger.error(f"[ERROR] An error occurred during transcription: {str(e)}")
+            logger.exception("An error occurred during Azure transcription: %s", e)
 
 if __name__ == "__main__":
     processor = AzureAIProcessor(

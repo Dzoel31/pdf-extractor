@@ -177,6 +177,7 @@ pyrightconfig.json
 
 app/results
 app/temp
+app/logs
 *.zip
 testing*
 *models*

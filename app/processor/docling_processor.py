@@ -1,9 +1,9 @@
 from pathlib import Path
 import time
 from typing import Any, Generator, Optional, Union
-import logging
 import math
 import json
+import os
 
 import pymupdf
 from docling.datamodel.base_models import InputFormat
@@ -24,9 +24,16 @@ from app.utils.helper import (
     log_process,
     check_json_file_exists,
 )
+from app.logging_config import get_logger
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+
+EASYOCR_DIR = ARTIFACT_DIR / "EasyOcr"
+EASYOCR_REQUIRED_FILES = (
+    EASYOCR_DIR / "craft_mlt_25k.pth",
+    EASYOCR_DIR / "english_g2.pth",
+    EASYOCR_DIR / "latin_g2.pth",
+)
 
 
 class DoclingProcessor:
@@ -46,25 +53,27 @@ class DoclingProcessor:
         self.number_threads = number_threads
         self.ocr_engine = ocr_engine
         self.output_dir = OUTPUT_DIR / "docling"
+        self.temp_dir = self.output_dir / "_pages"
+        self._converter_cache: dict[bool, DocumentConverter] = {}
 
     def process_pdf(self) -> Generator[dict[str, str], Any, None]:
         """Process a PDF file and extract text"""
-        ensure_temp_dir(self.output_dir)
+        ensure_temp_dir([self.output_dir, self.temp_dir])
 
         if not self.input_path.exists():
             raise FileNotFoundError(f"Input file {self.input_path} does not exist.")
 
-        model_exclude_object = YoloProcessor()
+        model_exclude_object = YoloProcessor() if self.exclude_object else None
         base_name = self.input_path.stem
         page_index = 0
         total_pages = 0
 
-        list_models = [f for f in ARTIFACT_DIR.rglob("*") if f.is_file()]
-        if not list_models:
-            logger.warning(
-                "No models found in ARTIFACT_DIR. Downloading default models."
+        if self.ocr_engine.lower() == "easyocr" and self._missing_easyocr_models():
+            yield log_process(
+                "info",
+                "EasyOCR models are incomplete. Downloading missing models before processing.",
             )
-            download_models(progress=True, output_dir=ARTIFACT_DIR)
+        self._ensure_docling_models()
 
         if self.create_markdown:
             result_path = self.output_dir / base_name
@@ -75,7 +84,8 @@ class DoclingProcessor:
 
         if check_json_file_exists(json_result_path) and not self.overwrite:
             logger.info(
-                f"JSON result already exists at {json_result_path}. Skipping processing."
+                "JSON result already exists at %s. Skipping processing.",
+                json_result_path,
             )
             yield log_process(
                 "skip",
@@ -92,17 +102,20 @@ class DoclingProcessor:
                 for i, page in enumerate(doc.pages()):
                     page_index = i + 1
                     logger.info(
-                        f"Processing page {page_index}/{total_pages} of {self.input_path.name}"
+                        "Processing page %s/%s of %s",
+                        page_index,
+                        total_pages,
+                        self.input_path.name,
                     )
 
-                    if self.exclude_object:
+                    if model_exclude_object:
                         page = model_exclude_object.exclude_object(
                             page=page,
                             class_names=0,
                         )
 
                     page_pdf_path = (
-                        self.output_dir / f"{base_name}_page_{page_index}.pdf"
+                        self.temp_dir / f"{base_name}_page_{page_index}.pdf"
                     )
                     with pymupdf.open() as temp_pdf:
                         temp_pdf.insert_pdf(
@@ -114,7 +127,10 @@ class DoclingProcessor:
                         )
                         temp_pdf.save(page_pdf_path, garbage=4, deflate=True)
 
-                    result_text, conversion_time, confidence = self._extract_text(file_path=page_pdf_path, ocr_engine=self.ocr_engine)
+                    result_text, conversion_time, confidence = self._extract_text(
+                        file_path=page_pdf_path,
+                        ocr_engine=self.ocr_engine,
+                    )
 
                     if result_text is None:
                         logger.warning(
@@ -137,11 +153,8 @@ class DoclingProcessor:
                         "content": result_text,
                         "duration": conversion_time,
                     }
-                    confidence["pages"][0] = {
-                        k: (None if isinstance(v, float) and math.isnan(v) else v)
-                        for k, v in confidence["pages"][0].items()
-                    }
-                    temp_json.update(confidence["pages"][0])
+                    page_confidence = self._page_confidence(confidence)
+                    temp_json.update(page_confidence)
                     result_json["content"].append(temp_json)
 
                     yield log_process(
@@ -169,8 +182,7 @@ class DoclingProcessor:
                         allow_nan=False,
                     )
 
-            # Clean up temporary files
-            for f in self.output_dir.glob("*.pdf"):
+            for f in self.temp_dir.glob("*.pdf"):
                 if f.is_file():
                     f.unlink(missing_ok=True)
 
@@ -179,16 +191,91 @@ class DoclingProcessor:
             )
 
         except Exception as e:
-            logger.error(f"Error processing {self.input_path.name}: {e}")
+            logger.exception("Error processing %s: %s", self.input_path.name, e)
             yield log_process(
                 "error", f"Failed to process {self.input_path.name}: {str(e)}"
             )
-            raise e
+            raise
 
-    def _extract_text(
-        self, file_path: Path, ocr_engine: str, force_ocr: bool = False,
-    ):
-        """Extract text from the PDF document."""
+    @staticmethod
+    def _page_confidence(confidence: dict) -> dict:
+        pages = confidence.get("pages") or {}
+        first_page = pages.get(1) or pages.get("1") or pages.get(0) or pages.get("0")
+        if first_page is None and pages:
+            first_page = next(iter(pages.values()))
+        first_page = first_page or {}
+        return {
+            k: (None if isinstance(v, float) and math.isnan(v) else v)
+            for k, v in first_page.items()
+        }
+
+    def _ensure_docling_models(self) -> None:
+        ensure_temp_dir(ARTIFACT_DIR)
+
+        list_models = [f for f in ARTIFACT_DIR.rglob("*") if f.is_file()]
+        if not list_models:
+            logger.warning(
+                "No Docling models found in %s. Downloading defaults.",
+                ARTIFACT_DIR,
+            )
+            download_models(progress=True, output_dir=ARTIFACT_DIR)
+
+        if self.ocr_engine.lower() == "easyocr":
+            self._ensure_easyocr_models()
+
+    def _ensure_easyocr_models(self) -> None:
+        ensure_temp_dir(EASYOCR_DIR)
+
+        missing_models = self._missing_easyocr_models()
+        if not missing_models:
+            return
+
+        logger.warning(
+            "EasyOCR model files are missing: %s. Downloading EasyOCR models.",
+            ", ".join(str(path) for path in missing_models),
+        )
+
+        download_models(
+            output_dir=ARTIFACT_DIR,
+            progress=True,
+            with_layout=False,
+            with_tableformer=False,
+            with_code_formula=False,
+            with_picture_classifier=False,
+            with_rapidocr=False,
+            with_easyocr=True,
+        )
+
+        missing_models = self._missing_easyocr_models()
+        if missing_models:
+            logger.warning(
+                "Docling EasyOCR download did not create all required files. Falling back to EasyOCR downloader.",
+            )
+            import easyocr
+
+            easyocr.Reader(
+                ["en", "id"],
+                gpu=False,
+                model_storage_directory=str(EASYOCR_DIR),
+                download_enabled=True,
+                verbose=False,
+            )
+
+        missing_models = self._missing_easyocr_models()
+        if missing_models:
+            raise FileNotFoundError(
+                "EasyOCR model files are still missing after download: "
+                + ", ".join(str(path) for path in missing_models)
+            )
+
+    @staticmethod
+    def _missing_easyocr_models() -> list[Path]:
+        return [path for path in EASYOCR_REQUIRED_FILES if not path.exists()]
+
+    def _get_converter(self, ocr_engine: str, force_ocr: bool) -> DocumentConverter:
+        if force_ocr in self._converter_cache:
+            return self._converter_cache[force_ocr]
+
         accelerator_options = AcceleratorOptions(
             num_threads=4 if self.number_threads is None else self.number_threads,
             device=AcceleratorDevice.AUTO,
@@ -201,13 +288,16 @@ class DoclingProcessor:
         pipeline_options.table_structure_options.do_cell_matching = True
         pipeline_options.images_scale = 2.0
 
-        settings.debug.profile_pipeline_timings = True
+        settings.debug.profile_pipeline_timings = (
+            os.getenv("DOCLING_PROFILE_TIMINGS", "1") != "0"
+        )
 
         match ocr_engine.lower():
             case "easyocr":
                 pipeline_options.ocr_options = EasyOcrOptions(
                     lang=["en", "id"],
                     force_full_page_ocr=force_ocr,
+                    model_storage_directory=str(EASYOCR_DIR),
                     download_enabled=True,
                 )
             case "tesseract":
@@ -216,6 +306,8 @@ class DoclingProcessor:
                     force_full_page_ocr=force_ocr,
                     tesseract_cmd="tesseract",
                 )
+            case _:
+                raise ValueError(f"Unsupported OCR engine: {ocr_engine}")
 
         converter = DocumentConverter(
             allowed_formats=[InputFormat.PDF],
@@ -225,10 +317,19 @@ class DoclingProcessor:
                 )
             },
         )
+        self._converter_cache[force_ocr] = converter
+        return converter
 
+    def _extract_text(
+        self, file_path: Path, ocr_engine: str, force_ocr: bool = False,
+    ):
+        """Extract text from the PDF document."""
+        converter = self._get_converter(ocr_engine=ocr_engine, force_ocr=force_ocr)
+        conversion_start = time.perf_counter()
         converter_result = converter.convert(file_path)
+        elapsed_time = time.perf_counter() - conversion_start
         text = converter_result.document.export_to_markdown(escape_underscores=False)
-        conversion_time = round(converter_result.timings["pipeline_total"].times[0], 2)
+        conversion_time = self._conversion_duration(converter_result, elapsed_time)
 
         confidence = converter_result.confidence.model_dump()
 
@@ -245,6 +346,21 @@ class DoclingProcessor:
             logger.info(f"Markdown file created at {markdown_path}")
 
         return text, conversion_time, confidence
+
+    @staticmethod
+    def _conversion_duration(converter_result, elapsed_time: float) -> float:
+        pipeline_total = converter_result.timings.get("pipeline_total")
+        if pipeline_total and pipeline_total.times:
+            return round(pipeline_total.times[0], 2)
+
+        if converter_result.timings:
+            total = 0.0
+            for item in converter_result.timings.values():
+                total += sum(item.times)
+            if total > 0:
+                return round(total, 2)
+
+        return round(elapsed_time, 2)
 
 
 if __name__ == "__main__":

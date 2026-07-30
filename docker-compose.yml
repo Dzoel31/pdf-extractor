@@ -1,5 +1,3 @@
-version: "3.9"
-
 volumes:
   pdf-extractor-models:
     name: pdf-extractor-models
@@ -18,6 +16,6 @@ services:
       - /bin/sh
       - -c
       - >
-        /entrypoint.sh streamlit run app/dashboard.py
+        /entrypoint.sh streamlit run dashboard.py
         --server.port=8501
         --server.address=0.0.0.0

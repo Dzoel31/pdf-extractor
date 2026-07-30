@@ -44,11 +44,11 @@ We test two methods to run this project, we can concluded:
     cd pdf-extractor
     ```
 
-3. **Create a virtual environment**  
-    Create a virtual environment to manage dependencies:
+3. **Create and sync a virtual environment with uv**
 
     ```bash
-    python -m venv venv
+    uv venv
+    uv pip sync requirements.txt
     ```
 
 4. **Activate the virtual environment**
@@ -56,23 +56,16 @@ We test two methods to run this project, we can concluded:
     - On Windows:
 
         ```bash
-        venv\Scripts\activate
+        .venv\Scripts\activate
         ```
 
     - On macOS/Linux:
 
         ```bash
-        source venv/bin/activate
+        source .venv/bin/activate
         ```
 
-5. **Install dependencies**
-    Install the required Python packages:
-
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-6. **Install Tesseract OCR**
+5. **Install Tesseract OCR**
     - **Windows**: Download the installer from [Tesseract at UB Mannheim](https://github.com/UB-Mannheim/tesseract/wiki)
 
     - **macOS**: Use Homebrew to install Tesseract:
@@ -87,7 +80,7 @@ We test two methods to run this project, we can concluded:
         sudo apt-get install tesseract-ocr
         ```
 
-7. **Install ffmpeg** (for video processing)
+6. **Install ffmpeg** (for video processing)
     - **Windows**: Download the latest release from [FFmpeg](https://ffmpeg.org/download.html) and add it to your PATH variable.
     - **macOS**: Use Homebrew:
 
@@ -101,14 +94,30 @@ We test two methods to run this project, we can concluded:
         sudo apt-get install ffmpeg
         ```
 
+7. **Configure optional credentials**
+
+    Azure Document Intelligence is only required for the Azure processor:
+
+    ```bash
+    AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT=...
+    AZURE_DOCUMENT_INTELLIGENCE_KEY=...
+    ```
+
+    Gemini post-processing for Whisper is optional. Set `GOOGLE_API_KEY` or `GEMINI_API_KEY` to enable it.
+
 8. **Run the application**
     Start the Streamlit application:
 
     ```bash
-    streamlit run dashboard.py
+    uv run streamlit run dashboard.py
     ```
 
 9. **Access the Web Interface**
+
+### Dependency Files
+
+- `requirements.txt` / `requirements-windows.txt`: local development lock files.
+- `requirements-cpu.txt`: Docker/Linux lock file with CPU-only torch wheels. Keep `requirements-cpu-constraints.txt` with it so Docker does not pull CUDA packages.
 
 ## Issues
 

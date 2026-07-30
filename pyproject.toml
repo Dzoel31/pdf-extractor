@@ -1,0 +1,38 @@
+[project]
+name = "pdf-extractor"
+version = "0.1.0"
+description = "Streamlit tool for PDF extraction, OCR, and audio/video transcription."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "accelerate",
+    "azure-ai-documentintelligence",
+    "docling",
+    "easyocr",
+    "langchain-core",
+    "langchain-community",
+    "langchain-google-genai",
+    "numpy",
+    "openai-whisper",
+    "opencv-python-headless",
+    "openpyxl",
+    "pandas",
+    "pillow",
+    "pydantic-settings",
+    "pydub",
+    "pymupdf",
+    "pypdf",
+    "pytesseract",
+    "python-dotenv",
+    "requests",
+    "streamlit<1.41",
+    "streamlit-pdf-viewer",
+    "torch",
+    "torchvision",
+    "ultralytics",
+]
+
+[project.optional-dependencies]
+windows = [
+    "pywin32; sys_platform == 'win32'",
+]

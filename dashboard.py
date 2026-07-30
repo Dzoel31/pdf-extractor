@@ -10,22 +10,24 @@ import re
 from pathlib import Path
 from glob import glob
 import uuid
-import pyperclip
 from datetime import datetime, timedelta
-import atexit
 
 from app.config import TEMP_DIR, OUTPUT_DIR, TEMP_DIR_MAP
+from app.logging_config import get_logger, configure_logging
 from app.processor.pymu_tesseract_processor import PymuTesseractProcessor
 from app.processor.docling_processor import DoclingProcessor
 from app.processor.azure_ai_processor import AzureAIProcessor
 from app.processor.whisper_processor import WhisperProcessor
+from app.processor.langchain_pypdf_processor import LangChainPyPDFProcessor
 
 from app.utils.helper import (
     Downloader,
     ensure_temp_dir,
-    check_json_file_exists,
     read_dataset,
 )
+
+configure_logging()
+logger = get_logger(__name__)
 
 # Fix torch path handling
 torch.classes.__path__ = []
@@ -61,8 +63,6 @@ def init_session_state():
         st.session_state["url_uploader_key"] = str(uuid.uuid4())
     if "temp_file_path" not in st.session_state:
         st.session_state["temp_file_path"] = None
-    if "already_copied" not in st.session_state:
-        st.session_state["already_copied"] = False
     if "selected_file" not in st.session_state:
         st.session_state["selected_file"] = None
     if "uploaded_files_meta" not in st.session_state:
@@ -71,8 +71,14 @@ def init_session_state():
 
 # Configure page
 def setup_page():
-    st.set_page_config(page_title="PDF Processing Dashboard", layout="wide")
+    st.set_page_config(
+        page_title="PDF Extractor",
+        page_icon=":material/document_scanner:",
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
     st.title("File Conversion & Audio Transcription")
+    st.caption("Extract PDFs, transcribe media, and review structured JSON results.")
 
 
 # Utility functions
@@ -124,7 +130,7 @@ def prepare_export():
 
 def has_extracted_data(output_dir: str | Path, export_to_markdown: bool):
     if not os.path.exists(output_dir):
-        return False
+        return True
 
     if st.session_state["method_option"] == "Docling":
         output_dir = OUTPUT_DIR / "docling"
@@ -134,6 +140,8 @@ def has_extracted_data(output_dir: str | Path, export_to_markdown: bool):
         output_dir = OUTPUT_DIR / "azure_document_intelligence"
     elif st.session_state["method_option"] == "Whisper AI":
         output_dir = OUTPUT_DIR / "whisper"
+    elif st.session_state["method_option"] == "LangChain + PyPDF":
+        output_dir = OUTPUT_DIR / "langchain_pypdf"
 
     if export_to_markdown:
         # Use glob for efficient file matching
@@ -147,7 +155,7 @@ def has_extracted_data(output_dir: str | Path, export_to_markdown: bool):
     else:
         extracted_files = [f for f in os.listdir(output_dir) if f.endswith(".json")]
 
-    return False if len(extracted_files) > 0 else True
+    return len(extracted_files) == 0
 
 
 def process_file_clicked():
@@ -166,10 +174,59 @@ def toast_upload_success():
     )
 
 
+def get_file_category(file_name: str) -> str | None:
+    extension = Path(file_name).suffix.removeprefix(".").lower()
+    return next(
+        (
+            category
+            for category, extensions in TEMP_DIR_MAP.items()
+            if extension in extensions
+        ),
+        None,
+    )
+
+
+def resolve_temp_file_path(file_name: str | Path) -> Path:
+    category = get_file_category(str(file_name))
+    if category is None:
+        raise ValueError(f"Unsupported file type: {file_name}")
+    return TEMP_DIR / category / Path(file_name).name
+
+
+def result_base_path(method_option: str | None) -> Path:
+    mapping = {
+        "Docling": OUTPUT_DIR / "docling",
+        "PyMuPDF + Tesseract": OUTPUT_DIR / "pymu_tesseract",
+        "Azure Doc Intelligence": OUTPUT_DIR / "azure_document_intelligence",
+        "Whisper AI": OUTPUT_DIR / "whisper",
+        "LangChain + PyPDF": OUTPUT_DIR / "langchain_pypdf",
+    }
+    return mapping.get(method_option, OUTPUT_DIR)
+
+
+def render_process_log(log, page_slot, file_slot) -> tuple[int, int, int]:
+    status = log.get("status")
+    message = log.get("message", "Processing update.")
+    if status == "skip":
+        page_slot.info(message)
+        return 1, 0, 1
+    if status == "info" or status == "ocr_active":
+        page_slot.info(message)
+        return 0, 0, 0
+    if status == "success":
+        file_slot.success(message)
+        return 1, 0, 0
+    if status == "error":
+        file_slot.error(message)
+        return 0, 1, 0
+    page_slot.write(message)
+    return 0, 0, 0
+
+
 # UI Components
 def render_sidebar():
     st.sidebar.title("Options")
-    st.sidebar.write("Select options to process PDF files. Default export JSON")
+    st.sidebar.caption("Default export format is JSON.")
 
     # Processing options
     number_thread = st.sidebar.number_input(
@@ -204,26 +261,33 @@ def render_sidebar():
         )
 
     with tab2:
-        url_pdf_file = st.text_input(
-            "Download PDF from URL",
-            placeholder="Enter PDF URL here",
-            help="Enter a valid URL to download a PDF file.",
-            key=st.session_state["url_uploader_key"],
-        )
+        with st.form("download_url_form", clear_on_submit=True):
+            url_pdf_file = st.text_input(
+                "Download PDF from URL",
+                placeholder="https://example.com/file.pdf",
+                help="Enter a direct URL to a supported file.",
+                key=st.session_state["url_uploader_key"],
+            )
+            submitted_url = st.form_submit_button(
+                "Download",
+                icon=":material/download:",
+                use_container_width=True,
+            )
 
-        if url_pdf_file:
-            results = Downloader(url_pdf_file).download()
-
-            for result in results:
-                if result.get("status") == "success":
-                    st.toast(
-                        result.get("message", "PDF downloaded successfully."),
-                        icon=":material/done_outline:",
-                    )
-                    st.session_state["url_uploader_key"] = str(
-                        uuid.uuid4()
-                    )  # Reset input
-                    st.rerun()
+        if submitted_url and url_pdf_file:
+            with st.status("Downloading file...", expanded=False):
+                for result in Downloader(url_pdf_file).download():
+                    status = result.get("status")
+                    message = result.get("message", "Download finished.")
+                    if status == "success":
+                        st.toast(message, icon=":material/done_outline:")
+                        logger.info("Downloaded file from sidebar URL.")
+                    elif status == "error":
+                        st.error(message)
+                    else:
+                        st.info(message)
+            st.session_state["url_uploader_key"] = str(uuid.uuid4())
+            st.rerun()
 
     df = None
     column_list = []
@@ -232,18 +296,17 @@ def render_sidebar():
 
     if dataset_files:
         for dataset_file in dataset_files:
-            category = next(
-                key
-                for key, value in TEMP_DIR_MAP.items()
-                if Path(dataset_file.name).suffix.split(".")[-1].lower() in value
-            )
+            category = get_file_category(dataset_file.name)
+            if category is None:
+                st.sidebar.error(f"Unsupported file type: {dataset_file.name}")
+                continue
 
             ensure_temp_dir(TEMP_DIR / category)
             temp_file_path = TEMP_DIR / category / dataset_file.name
             with open(temp_file_path, "wb") as f:
                 f.write(dataset_file.getbuffer())
 
-            if re.search(r"\.(csv|xlsx)$", category, re.IGNORECASE):
+            if temp_file_path.suffix.lower() in {".csv", ".xlsx", ".xls"}:
                 df = read_dataset(temp_file_path)
                 column_list = df.columns.tolist()
 
@@ -507,7 +570,13 @@ def handle_pdf_processing(export_to_markdown, number_thread, overwrite):
     process_all_files, process_single_file, exclude_object, method_options = st.columns(
         4, gap="small", vertical_alignment="bottom"
     )
-    method = ["Docling", "PyMuPDF + Tesseract", "Azure Doc Intelligence", "Whisper AI"]
+    method = [
+        "Docling",
+        "PyMuPDF + Tesseract",
+        "Azure Doc Intelligence",
+        "LangChain + PyPDF",
+        "Whisper AI",
+    ]
 
     method_option_select = method_options.selectbox(
         "Select Processing Method",
@@ -521,6 +590,7 @@ def handle_pdf_processing(export_to_markdown, number_thread, overwrite):
             OUTPUT_DIR / "docling",
             OUTPUT_DIR / "pymu_tesseract",
             OUTPUT_DIR / "azure_document_intelligence",
+            OUTPUT_DIR / "langchain_pypdf",
             OUTPUT_DIR / "whisper",
         ]
     )
@@ -530,6 +600,8 @@ def handle_pdf_processing(export_to_markdown, number_thread, overwrite):
         key="process_file",
         disabled=False if files else True,
         on_click=process_file_clicked,
+        icon=":material/play_arrow:",
+        type="primary",
     )
 
     extract_current_file = process_single_file.toggle(
@@ -568,7 +640,10 @@ def handle_pdf_processing(export_to_markdown, number_thread, overwrite):
             st.session_state["process_file_clicked"] = False
 
             stop_button = st.button(
-                "Stop", on_click=cancel_processing, disabled=stop_button_disabled
+                "Stop",
+                on_click=cancel_processing,
+                disabled=stop_button_disabled,
+                icon=":material/stop:",
             )
 
         total_files = len(files)
@@ -595,6 +670,7 @@ def handle_pdf_processing(export_to_markdown, number_thread, overwrite):
 
 
                 file_extension = Path(file_name).suffix.lower().split(".")[-1]
+                input_path = resolve_temp_file_path(file_name)
 
                 # PDF file but Whisper AI selected
                 if file_extension in TEMP_DIR_MAP.get("pdf", []):
@@ -606,7 +682,7 @@ def handle_pdf_processing(export_to_markdown, number_thread, overwrite):
                     # PDF processing methods
                     if method_option_select == "Docling":
                         processor = DoclingProcessor(
-                            input_path=TEMP_DIR / "pdf" / file_name,
+                            input_path=input_path,
                             create_markdown=export_to_markdown,
                             overwrite=overwrite,
                             exclude_object=exclude_object_value,
@@ -614,30 +690,12 @@ def handle_pdf_processing(export_to_markdown, number_thread, overwrite):
                             ocr_engine=ocr_engine,
                         )
                         for log in processor.process_pdf():
-                            if log.get("status") == "skip":
-                                total_success += 1
-                                total_skipped += 1
-                                page_processing_slot_status.info(
-                                    log.get("message", "Processing skipped.")
-                                )
-                            elif log.get("status") == "info":
-                                page_processing_slot_status.info(
-                                    log.get("message", "Processing info.")
-                                )
-                            elif log.get("status") == "success":
-                                total_success += 1
-                                file_status.success(
-                                    log.get("message", "Processing succeeded.")
-                                )
-                            elif log.get("status") == "error":
-                                total_failed += 1
-                                st.write(log.get("message", "Processing failed."))
-                            elif log.get("status") == "ocr_active":
-                                page_processing_slot_status.info(
-                                    log.get("message", "OCR is active.")
-                                )
-                            else:
-                                st.write(log.get("message", "Processing failed."))
+                            success, failed, skipped = render_process_log(
+                                log, page_processing_slot_status, file_status
+                            )
+                            total_success += success
+                            total_failed += failed
+                            total_skipped += skipped
                         status.update(
                             label=f"Processing: {idx}/{total_files} Files | Success {total_success} | Skipped {total_skipped} | Failed {total_failed}"
                         )
@@ -645,69 +703,60 @@ def handle_pdf_processing(export_to_markdown, number_thread, overwrite):
                         page_processing_slot_status.empty()
                     elif method_option_select == "PyMuPDF + Tesseract":
                         processor = PymuTesseractProcessor(
-                            input_path=TEMP_DIR / "pdf" / file_name,
+                            input_path=input_path,
                             overwrite=overwrite,
                         )
                         for log in processor.process_pdf():
-                            if log.get("status") == "skip":
-                                total_success += 1
-                                total_skipped += 1
-                                page_processing_slot_status.info(
-                                    log.get("message", "Processing skipped.")
-                                )
-                            elif log.get("status") == "info":
-                                page_processing_slot_status.info(
-                                    log.get("message", "Processing info.")
-                                )
-                            elif log.get("status") == "success":
-                                total_success += 1
-                                file_status.success(
-                                    log.get("message", "Processing succeeded.")
-                                )
-                            elif log.get("status") == "error":
-                                total_failed += 1
-                                st.write(log.get("message", "Processing failed."))
-                            elif log.get("status") == "ocr_active":
-                                page_processing_slot_status.info(
-                                    log.get("message", "OCR is active.")
-                                )
-                            else:
-                                st.write(log.get("message", "Processing failed."))
+                            success, failed, skipped = render_process_log(
+                                log, page_processing_slot_status, file_status
+                            )
+                            total_success += success
+                            total_failed += failed
+                            total_skipped += skipped
                         status.update(
                             label=f"Processing: {idx}/{total_files} Files | Success {total_success} | Skipped {total_skipped} | Failed {total_failed}"
                         )
                         st.session_state["process_file_clicked"] = False
                         page_processing_slot_status.empty()
                     elif method_option_select == "Azure Doc Intelligence":
-                        processor = AzureAIProcessor(
-                            endpoint=os.environ.get(
-                                "AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT", ""
-                            ),
-                            key=os.environ.get("AZURE_DOCUMENT_INTELLIGENCE_KEY", ""),
-                        )
+                        try:
+                            processor = AzureAIProcessor(
+                                endpoint=os.environ.get(
+                                    "AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT", ""
+                                ),
+                                key=os.environ.get("AZURE_DOCUMENT_INTELLIGENCE_KEY", ""),
+                            )
+                        except ValueError as exc:
+                            total_failed += 1
+                            file_status.error(str(exc))
+                            logger.warning("Azure processor is not configured.")
+                            continue
                         for log in processor.transcribe_pdf(
-                            file=str(TEMP_DIR / "pdf" / file_name), overwrite=overwrite
+                            file=str(input_path), overwrite=overwrite
                         ):
-                            if log.get("status") == "skip":
-                                total_success += 1
-                                total_skipped += 1
-                                page_processing_slot_status.info(
-                                    log.get("message", "Processing skipped.")
-                                )
-                            elif log.get("status") == "info":
-                                page_processing_slot_status.info(
-                                    log.get("message", "Processing info.")
-                                )
-                            elif log.get("status") == "success":
-                                total_success += 1
-                                file_status.success(
-                                    log.get("message", "Processing succeeded.")
-                                )
-                            elif log.get("status") == "error":
-                                total_failed += 1
-                                st.write(log.get("message", "Processing failed."))
-                            else:
-                                st.write(log.get("message", "Processing failed."))
+                            success, failed, skipped = render_process_log(
+                                log, page_processing_slot_status, file_status
+                            )
+                            total_success += success
+                            total_failed += failed
+                            total_skipped += skipped
+                        status.update(
+                            label=f"Processing: {idx}/{total_files} Files | Success {total_success} | Skipped {total_skipped} | Failed {total_failed}"
+                        )
+                        st.session_state["process_file_clicked"] = False
+                        page_processing_slot_status.empty()
+                    elif method_option_select == "LangChain + PyPDF":
+                        processor = LangChainPyPDFProcessor(
+                            input_path=input_path,
+                            overwrite=overwrite,
+                        )
+                        for log in processor.process_pdf():
+                            success, failed, skipped = render_process_log(
+                                log, page_processing_slot_status, file_status
+                            )
+                            total_success += success
+                            total_failed += failed
+                            total_skipped += skipped
                         status.update(
                             label=f"Processing: {idx}/{total_files} Files | Success {total_success} | Skipped {total_skipped} | Failed {total_failed}"
                         )
@@ -731,28 +780,14 @@ def handle_pdf_processing(export_to_markdown, number_thread, overwrite):
                         )
                         continue
                     for log in processor.transcribe_audio(
-                        file_path=TEMP_DIR / "video" / file_name,
+                        file_path=input_path,
                     ):
-                        if log.get("status") == "skip":
-                            total_success += 1
-                            total_skipped += 1
-                            page_processing_slot_status.info(
-                                log.get("message", "Processing skipped.")
-                            )
-                        elif log.get("status") == "info":
-                            page_processing_slot_status.info(
-                                log.get("message", "Processing info.")
-                            )
-                        elif log.get("status") == "success":
-                            total_success += 1
-                            file_status.success(
-                                log.get("message", "Processing succeeded.")
-                            )
-                        elif log.get("status") == "error":
-                            total_failed += 1
-                            st.write(log.get("message", "Processing failed."))
-                        else:
-                            st.write(log.get("message", "Processing failed."))
+                        success, failed, skipped = render_process_log(
+                            log, page_processing_slot_status, file_status
+                        )
+                        total_success += success
+                        total_failed += failed
+                        total_skipped += skipped
                     status.update(
                         label=f"Processing: {idx}/{total_files} Videos | Success {total_success} | Skipped {total_skipped} | Failed {total_failed}"
                     )
@@ -908,14 +943,14 @@ def render_preview_file(files, export_to_markdown):
 
     st.write(f"{'Page' if is_pdf else 'Video'} {page_number} of {max_page}")
 
-    preview, result = st.columns(2, border=True)
+    preview, result = st.columns(2)
 
     with preview:
         if is_pdf:
             st.write("Selected PDF:")
             pdf_viewer(
                 file_path,
-                width=900,
+                width="100%",
                 height=700,
                 pages_to_render=[page_number],
                 key=f"pdf_viewer_{query_file.stem}_{page_number}",
@@ -932,17 +967,7 @@ def render_preview_file(files, export_to_markdown):
 
         file_name = query_file.stem
 
-        # Determine output/result path
-        if st.session_state["method_option"] == "Docling":
-            base_path = OUTPUT_DIR / "docling"
-        elif st.session_state["method_option"] == "PyMuPDF + Tesseract":
-            base_path = OUTPUT_DIR / "pymu_tesseract"
-        elif st.session_state["method_option"] == "Azure Doc Intelligence":
-            base_path = OUTPUT_DIR / "azure_document_intelligence"
-        elif st.session_state["method_option"] == "Whisper AI":
-            base_path = OUTPUT_DIR / "whisper"
-        else:
-            base_path = OUTPUT_DIR
+        base_path = result_base_path(st.session_state["method_option"])
 
         # Result file path logic
         if export_to_markdown and st.session_state["method_option"] == "Docling":
@@ -971,34 +996,34 @@ def render_preview_file(files, export_to_markdown):
                 if is_pdf and 0 <= page_number - 1 < len(content):
                     selected_page = content[page_number - 1]["content"]
                     dur_per_page = content[page_number - 1].get("duration", 0) or 0
-                    confidence = content[page_number - 1].get("confidence", 0) or 0
-                    parse_score = content[page_number - 1].get("parse_score", 0) or 0
-                    layout_score = content[page_number - 1].get("layout_score", 0) or 0
-                    table_score = content[page_number - 1].get("table_score", 0) or 0
-                    ocr_score = content[page_number - 1].get("ocr_score", 0) or 0
+                    page_result = content[page_number - 1]
 
-                    raw_md_button = st.button(
-                        "Copy Raw Markdown",
+                    st.download_button(
+                        "Download Page Markdown",
+                        data=selected_page,
+                        file_name=f"{file_name}_page_{page_number}.md",
+                        mime="text/markdown",
                         key=f"raw_md_{file_name}_{page_number}",
-                        help="Click to copy raw markdown content.",
+                        icon=":material/download:",
+                        help="Download the raw markdown content for this page.",
                     )
-                    if raw_md_button:
-                        pyperclip.copy(selected_page)
-                        st.session_state["already_copied"] = True
-                        st.rerun()
 
                     with st.expander("Processing Details", expanded=False):
-                        st.markdown(
-                            f"""
-                            - **Total Duration**: {total_duration:.2f} seconds
-                            - **Time for Page {page_number}**: {dur_per_page:.2f} seconds
-                            - **Confidence**: {confidence:.4f}
-                            - **Parse Score**: {parse_score:.4f}
-                            - **Layout Score**: {layout_score:.4f}
-                            - **Table Score**: {table_score:.4f}
-                            - **OCR Score**: {ocr_score:.4f}
-                            """
-                        )
+                        detail_lines = [
+                            f"- **Total Duration**: {total_duration:.2f} seconds",
+                            f"- **Time for Page {page_number}**: {dur_per_page:.2f} seconds",
+                        ]
+                        for label, key in [
+                            ("Confidence", "confidence"),
+                            ("Parse Score", "parse_score"),
+                            ("Layout Score", "layout_score"),
+                            ("Table Score", "table_score"),
+                            ("OCR Score", "ocr_score"),
+                        ]:
+                            value = page_result.get(key)
+                            if isinstance(value, (int, float)):
+                                detail_lines.append(f"- **{label}**: {value:.4f}")
+                        st.markdown("\n".join(detail_lines))
                     st.markdown("### Conversion")
                     with st.container(key="markdown_result", height=400):
                         st.write(selected_page, unsafe_allow_html=True)
@@ -1054,10 +1079,6 @@ def main():
     if st.session_state.get("already_exported"):
         st.toast("Export completed!", icon="✅")
         st.session_state["already_exported"] = False
-
-    if st.session_state.get("already_copied"):
-        st.toast("Markdown copied to clipboard!", icon="✅")
-        st.session_state["already_copied"] = False
 
     # Handle downloads
     if download_button:

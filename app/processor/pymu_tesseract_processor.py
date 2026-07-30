@@ -1,12 +1,9 @@
 import json
-import logging
-import os
 import re
 import time
 import gc
-from glob import glob
 from pathlib import Path
-from typing import Union, List, Tuple, Optional, Generator, Any
+from typing import Union, Tuple
 
 import cv2
 import numpy as np
@@ -22,9 +19,9 @@ from app.utils.helper import (
     check_json_file_exists,
     log_process,
 )
+from app.logging_config import get_logger
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class PymuTesseractProcessor:
@@ -71,9 +68,7 @@ class PymuTesseractProcessor:
         model = YoloProcessor().model
 
         if not self.overwrite and check_json_file_exists(output_file):
-            logger.info(
-                f"JSON result already exists at {output_file}. Skipping processing."
-            )
+            logger.info("JSON result already exists at %s. Skipping processing.", output_file)
             yield log_process(
                 "skip",
                 f"JSON result already exists for {base_name}. Skipping processing.",
@@ -122,7 +117,7 @@ class PymuTesseractProcessor:
                 )
 
         except Exception as e:
-            logger.error(f"Error processing PDF {self.input_path}: {e}")
+            logger.exception("Error processing PDF %s: %s", self.input_path, e)
             yield log_process(
                 "error",
                 f"Error processing PDF {self.input_path}: {e}",
@@ -133,7 +128,7 @@ class PymuTesseractProcessor:
         data = pytesseract.image_to_data(
             image=image,
             config="--oem 3 --psm 4",
-            lang="end+ind",
+            lang="eng+ind",
             output_type=pytesseract.Output.DICT,
         )
         confidence = [float(data['conf'][i]) for i in range(len(data['text'])) if data['conf'][i] != '-1']
