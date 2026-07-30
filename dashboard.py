@@ -6,7 +6,6 @@ import torch
 import pymupdf
 import json
 import time
-import re
 from pathlib import Path
 from glob import glob
 import uuid
@@ -639,7 +638,7 @@ def handle_pdf_processing(export_to_markdown, number_thread, overwrite):
             st.session_state["cancel_processing"] = False
             st.session_state["process_file_clicked"] = False
 
-            stop_button = st.button(
+            st.button(
                 "Stop",
                 on_click=cancel_processing,
                 disabled=stop_button_disabled,

@@ -3,7 +3,7 @@ name = "pdf-extractor"
 version = "0.1.0"
 description = "Streamlit tool for PDF extraction, OCR, and audio/video transcription."
 readme = "README.md"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.13,<3.14"
 dependencies = [
     "accelerate",
     "azure-ai-documentintelligence",
@@ -25,11 +25,12 @@ dependencies = [
     "pytesseract",
     "python-dotenv",
     "requests",
-    "streamlit<1.41",
+    "streamlit",
     "streamlit-pdf-viewer",
     "torch",
     "torchvision",
     "ultralytics",
+    "numba>=0.66.0",
 ]
 
 [project.optional-dependencies]

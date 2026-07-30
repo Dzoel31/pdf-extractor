@@ -1,5 +1,5 @@
 # --- Builder Stage ---
-FROM python:3.12-slim-bookworm AS builder
+FROM python:3.13-slim-bookworm AS builder
 
 # Install system dependencies - combined into one RUN to reduce layers
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -32,7 +32,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --system
 
 # --- Final Stage ---
-FROM python:3.12-slim-bookworm
+FROM python:3.13-slim-bookworm
 
 # Install only runtime dependencies in a single layer
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -50,7 +50,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Copy installed Python packages and app from builder
-COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy only necessary application files
