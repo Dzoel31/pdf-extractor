@@ -17,7 +17,7 @@ dependencies = [
     "opencv-python-headless",
     "openpyxl",
     "pandas",
-    "pillow",
+    "pillow>=12.3.0",
     "pydantic-settings",
     "pydub",
     "pymupdf",

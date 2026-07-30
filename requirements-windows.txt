@@ -11,7 +11,7 @@ aiohttp==3.14.3
     # via langchain-community
 aiosignal==1.4.0
     # via aiohttp
-altair==5.5.0
+altair==4.2.2
     # via streamlit
 annotated-doc==0.0.4
     # via typer
@@ -95,6 +95,8 @@ docling-slim==2.114.0
     # via docling
 easyocr==1.7.2
     # via pdf-extractor (pyproject.toml)
+entrypoints==0.4
+    # via altair
 et-xmlfile==2.0.0
     # via openpyxl
 faker==40.35.0
@@ -157,6 +159,8 @@ idna==3.18
     #   yarl
 imageio==2.37.4
     # via scikit-image
+importlib-metadata==9.0.0
+    # via streamlit
 isodate==0.7.2
     # via azure-ai-documentintelligence
 jinja2==3.1.6
@@ -237,8 +241,6 @@ multidict==6.7.1
     #   yarl
 multiprocess==0.70.19
     # via mpire
-narwhals==2.24.0
-    # via altair
 networkx==3.6.1
     # via
     #   scikit-image
@@ -251,6 +253,7 @@ numpy==2.5.1
     # via
     #   pdf-extractor (pyproject.toml)
     #   accelerate
+    #   altair
     #   contourpy
     #   docling-ibm-models
     #   docling-slim
@@ -298,7 +301,6 @@ orjson==3.11.9
 packaging==24.2
     # via
     #   accelerate
-    #   altair
     #   huggingface-hub
     #   langchain-core
     #   langsmith
@@ -311,9 +313,10 @@ packaging==24.2
 pandas==2.3.3
     # via
     #   pdf-extractor (pyproject.toml)
+    #   altair
     #   docling-core
     #   streamlit
-pillow==11.3.0
+pillow==12.3.0
     # via
     #   pdf-extractor (pyproject.toml)
     #   docling-core
@@ -342,7 +345,7 @@ propcache==0.5.2
     # via
     #   aiohttp
     #   yarl
-protobuf==5.29.6
+protobuf==3.20.3
     # via streamlit
 psutil==7.2.2
     # via
@@ -390,6 +393,8 @@ pygments==2.20.0
     #   rich
 pylatexenc==2.10
     # via docling-slim
+pympler==1.1
+    # via streamlit
 pymupdf==1.28.0
     # via pdf-extractor (pyproject.toml)
 pyparsing==3.3.2
@@ -406,6 +411,7 @@ python-dateutil==2.9.0.post0
     # via
     #   matplotlib
     #   pandas
+    #   streamlit
 python-docx==1.2.0
     # via docling-slim
 python-dotenv==1.2.2
@@ -422,6 +428,7 @@ pywin32==312
     #   pdf-extractor (pyproject.toml)
     #   docling-parse
     #   mpire
+    #   pympler
 pyyaml==6.0.3
     # via
     #   accelerate
@@ -515,7 +522,7 @@ sqlalchemy==2.0.51
     # via
     #   langchain-classic
     #   langchain-community
-streamlit==1.40.2
+streamlit==1.22.0
     # via
     #   pdf-extractor (pyproject.toml)
     #   streamlit-pdf-viewer
@@ -525,7 +532,7 @@ sympy==1.14.0
     # via torch
 tabulate==0.10.0
     # via docling-core
-tenacity==9.1.4
+tenacity==8.5.0
     # via
     #   google-genai
     #   langchain-community
@@ -539,6 +546,8 @@ tokenizers==0.22.2
     # via transformers
 toml==0.10.2
     # via streamlit
+toolz==1.1.0
+    # via altair
 torch==2.13.0
     # via
     #   pdf-extractor (pyproject.toml)
@@ -594,7 +603,6 @@ typing-extensions==4.16.0
     # via
     #   aiohttp
     #   aiosignal
-    #   altair
     #   anyio
     #   azure-ai-documentintelligence
     #   azure-core
@@ -623,6 +631,9 @@ tzdata==2026.3
     # via
     #   faker
     #   pandas
+    #   tzlocal
+tzlocal==5.4.4
+    # via streamlit
 ultralytics==8.4.104
     # via pdf-extractor (pyproject.toml)
 ultralytics-thop==2.0.20
@@ -633,6 +644,8 @@ uuid-utils==0.17.0
     # via
     #   langchain-core
     #   langsmith
+validators==0.35.0
+    # via streamlit
 watchdog==6.0.0
     # via streamlit
 websockets==16.1.1
@@ -646,5 +659,7 @@ xxhash==3.8.1
     # via langsmith
 yarl==1.24.5
     # via aiohttp
+zipp==4.1.0
+    # via importlib-metadata
 zstandard==0.25.0
     # via langsmith
