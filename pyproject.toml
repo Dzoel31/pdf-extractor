@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13,<3.14"
 dependencies = [
     "accelerate",
+    "audioop-lts; python_version >= '3.13'",
     "azure-ai-documentintelligence",
     "docling",
     "easyocr",
@@ -14,10 +15,9 @@ dependencies = [
     "langchain-google-genai",
     "numpy",
     "openai-whisper",
-    "opencv-python-headless",
     "openpyxl",
     "pandas",
-    "pillow>=12.3.0",
+    "pillow>=13.0.0",
     "pydantic-settings",
     "pydub",
     "pymupdf",
@@ -27,13 +27,101 @@ dependencies = [
     "requests",
     "streamlit",
     "streamlit-pdf-viewer",
-    "torch",
-    "torchvision",
     "ultralytics",
-    "numba>=0.66.0",
 ]
 
 [project.optional-dependencies]
+cpu = [
+    "torch",
+    "torchvision",
+]
+gpu = [
+    "torch",
+    "torchvision",
+    "triton",
+]
 windows = [
     "pywin32; sys_platform == 'win32'",
 ]
+
+[dependency-groups]
+dev = [
+    "python-semantic-release>=10.5.3",
+]
+
+[tool.uv]
+exclude-newer = "7 days"
+conflicts = [
+    [
+        { extra = "cpu" },
+        { extra = "gpu" },
+    ],
+]
+dependency-metadata = [
+    { name = "openai-whisper", requires-dist = [
+        "more-itertools",
+        "numba",
+        "numpy",
+        "tiktoken",
+        "torch",
+        "tqdm",
+        "black; extra == 'dev'",
+        "flake8; extra == 'dev'",
+        "isort; extra == 'dev'",
+        "pytest; extra == 'dev'",
+        "scipy; extra == 'dev'",
+    ], provides-extra = ["dev"] },
+    { name = "ultralytics", requires-dist = [
+        "numpy>=1.23.0; platform_system != 'Darwin'",
+        "numpy!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.0,!=2.3.1,!=2.3.2,!=2.3.3,!=2.3.4,>=1.23.0; platform_system == 'Darwin'",
+        "matplotlib>=3.3.0",
+        "opencv-python-headless!=4.13.0.90,>=4.7.0",
+        "pillow>=7.1.2",
+        "requests>=2.23.0",
+        "torch>=1.8.0",
+        "torch!=2.4.0,>=1.8.0; sys_platform == 'win32'",
+        "torchvision>=0.9.0",
+        "psutil>=5.8.0",
+        "polars>=0.20.0",
+        "nvidia-ml-py>=12.0.0",
+        "ultralytics-thop>=2.2.4",
+        "ultralytics-platform>=0.1.102; python_version >= '3.11'",
+    ] },
+]
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu132", extra = "gpu" },
+]
+torchvision = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu132", extra = "gpu" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu132"
+url = "https://download.pytorch.org/whl/cu132"
+explicit = true
+
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+commit_parser = "conventional"
+upload_to_release = true
+upload_to_pypi = false
+build_command = "uv lock --upgrade-package pdf-extractor && git add uv.lock"
+tag_format = "{version}"
+changelog_file = "CHANGELOG.md"
+
+[tool.semantic_release.branches.main]
+match = "main"
+
+[tool.semantic_release.commit_parser_options]
+allowed_tags = ["build", "chore", "ci", "docs", "feat", "fix", "perf", "refactor", "style", "test"]
+minor_re = "(?i)^(feat)"
+patch_re = "(?i)^(fix|perf|refactor)"

@@ -1,124 +1,102 @@
-# File Extraction and Video Transcription Tool
+# PDF Extractor
 
-PDF Extractor is a Python-based tool that extracts text from PDF files using PyMuPDF and Tesseract OCR. It is designed to handle both text-based and image-based PDFs, making it versatile for various use cases.
+Aplikasi Streamlit untuk ekstraksi PDF, OCR, dan transkripsi audio/video menggunakan Whisper `large-v3`.
 
-## How to Use
+## Menjalankan dengan Docker
 
-We test two methods to run this project, we can concluded:
+CPU adalah varian standar dan cocok untuk laptop tanpa NVIDIA GPU:
 
-- Docker is the easiest way to run this project
-- Clone the repository is the fastest way to extract text from PDF
-- If you want to modify the code, you can clone the repository and run it locally
+```bash
+docker pull dzuladj/pdf-extractor:latest
+docker run --rm -p 8501:8501 \
+  -v pdf-extractor-models:/app/app/models \
+  dzuladj/pdf-extractor:latest
+```
 
-### Using Docker
+Buka <http://localhost:8501>. Model Whisper `large-v3` diunduh ketika transkripsi pertama dijalankan, bukan dimasukkan ke image. Volume menyimpan model agar tidak perlu diunduh ulang. Container juga menyiapkan model Docling saat pertama kali berjalan.
 
-1. **Pull the Docker image**  
-    Run the following command to pull the latest Docker image:
+Untuk NVIDIA GPU di mesin Linux dengan NVIDIA Container Toolkit, gunakan image `latest-gpu` dan port 8502:
 
-    ```bash
-    docker pull dzuladj/pdf-extractor:latest
-    ```
+```bash
+docker pull dzuladj/pdf-extractor:latest-gpu
+docker run --rm --gpus all -p 8502:8501 \
+  -v pdf-extractor-models:/app/app/models \
+  dzuladj/pdf-extractor:latest-gpu
+```
 
-2. **Run the Docker container**  
-    Use this command to start the Docker container:
+## Menjalankan dari source
 
-    ```bash
-    docker run -p 8501:8501 dzuladj/pdf-extractor:latest
-    ```
+Perlu Python 3.13, [uv](https://docs.astral.sh/uv/), FFmpeg, dan Tesseract OCR. FFmpeg dipakai Whisper untuk membaca audio/video; Tesseract dipakai OCR. Contoh pemasangan tool sistem:
 
-3. **Access the Web Interface**  
-    Open your web browser and go to `http://localhost:8501` to access the web interface.
+- Windows: pasang FFmpeg dari [ffmpeg.org](https://ffmpeg.org/download.html) dan Tesseract dari [UB Mannheim](https://github.com/UB-Mannheim/tesseract/wiki); pastikan executable tersedia di `PATH`.
+- macOS: `brew install ffmpeg tesseract tesseract-lang`.
+- Debian/Ubuntu: `sudo apt-get install ffmpeg tesseract-ocr tesseract-ocr-eng tesseract-ocr-ind`.
 
-### Clone the Repository
+```bash
+git clone https://github.com/Dzoel31/pdf-extractor.git
+cd pdf-extractor
+uv python install 3.13
+uv sync --locked --no-dev --extra cpu --extra windows
+```
 
-1. **Clone the repository**  
-    Clone this repository to your local machine:
+Salin `.env.example` menjadi `.env`, kemudian isi hanya kredensial untuk fitur opsional yang digunakan (rinciannya di bawah). Jalankan aplikasi:
 
-    ```bash
-    git clone https://github.com/Dzoel31/pdf-extractor.git
-    ```
+```bash
+uv run --no-sync streamlit run dashboard.py
+```
 
-2. **Navigate to the project directory**
+Buka <http://localhost:8501>.
 
-    ```bash
-    cd pdf-extractor
-    ```
+## Konfigurasi `.env`
 
-3. **Create and sync a virtual environment with uv**
+Salin template:
 
-    ```bash
-    uv venv
-    uv pip sync requirements.txt
-    ```
+```bash
+cp .env.example .env
+```
 
-4. **Activate the virtual environment**
+Di PowerShell:
 
-    - On Windows:
+```powershell
+Copy-Item .env.example .env
+```
 
-        ```bash
-        .venv\Scripts\activate
-        ```
+Azure Document Intelligence tidak wajib. Biarkan kedua nilai ini kosong jika tidak memilih metode **Azure Doc Intelligence** di aplikasi. Isi endpoint dan key Azure hanya ketika metode itu dipilih:
 
-    - On macOS/Linux:
+```dotenv
+AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT=
+AZURE_DOCUMENT_INTELLIGENCE_KEY=
+```
 
-        ```bash
-        source .venv/bin/activate
-        ```
+Perapian hasil transkripsi melalui Gemini juga opsional. Isi `GOOGLE_API_KEY` (atau `GEMINI_API_KEY`) hanya jika fitur itu ingin digunakan. Tanpa key, Whisper tetap menghasilkan transkrip dan langkah Gemini dilewati.
 
-5. **Install Tesseract OCR**
-    - **Windows**: Download the installer from [Tesseract at UB Mannheim](https://github.com/UB-Mannheim/tesseract/wiki)
+Jangan commit `.env` atau memasukkan key ke image. Berkas `.env` sudah diabaikan oleh Git.
 
-    - **macOS**: Use Homebrew to install Tesseract:
+## Build image lokal
 
-        ```bash
-        brew install tesseract
-        ```
+Build CPU untuk pengembangan lokal:
 
-    - **Linux**: Use the package manager to install Tesseract:
+```bash
+docker build --build-arg TORCH_VARIANT=cpu -t pdf-extractor:cpu-dev .
+```
 
-        ```bash
-        sudo apt-get install tesseract-ocr
-        ```
+Compose:
 
-6. **Install ffmpeg** (for video processing)
-    - **Windows**: Download the latest release from [FFmpeg](https://ffmpeg.org/download.html) and add it to your PATH variable.
-    - **macOS**: Use Homebrew:
+```bash
+docker compose up --build pdf-extractor
+```
 
-        ```bash
-        brew install ffmpeg
-        ```
+Build varian GPU tersedia untuk host Linux NVIDIA; tidak perlu menjalankan inference GPU untuk membangun image:
 
-    - **Linux**: Use the package manager:
+```bash
+docker compose --profile gpu up --build pdf-extractor-gpu
+```
 
-        ```bash
-        sudo apt-get install ffmpeg
-        ```
+## Release dan Docker Hub
 
-7. **Configure optional credentials**
+Setelah CI lulus di `main`, Semantic Release membuat GitHub Release sesuai Conventional Commits. Workflow Docker Release menerbitkan dua image ke Docker Hub:
 
-    Azure Document Intelligence is only required for the Azure processor:
+- `dzuladj/pdf-extractor:latest` dan `<versi>-cpu` untuk CPU.
+- `dzuladj/pdf-extractor:latest-gpu` dan `<versi>-gpu` untuk CUDA GPU.
 
-    ```bash
-    AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT=...
-    AZURE_DOCUMENT_INTELLIGENCE_KEY=...
-    ```
-
-    Gemini post-processing for Whisper is optional. Set `GOOGLE_API_KEY` or `GEMINI_API_KEY` to enable it.
-
-8. **Run the application**
-    Start the Streamlit application:
-
-    ```bash
-    uv run streamlit run dashboard.py
-    ```
-
-9. **Access the Web Interface**
-
-### Dependency Files
-
-- `requirements.txt` / `requirements-windows.txt`: local development lock files.
-- `requirements-cpu.txt`: Docker/Linux lock file with CPU-only torch wheels. Keep `requirements-cpu-constraints.txt` with it so Docker does not pull CUDA packages.
-
-## Issues
-
-If you encounter any issues, please add them to the [issues page](https://github.com/Dzoel31/pdf-extractor/issues).
+GitHub Actions memerlukan repository secrets `DOCKER_USERNAME`, `DOCKER_PUSH` (Docker Hub access token), dan `RELEASE_TOKEN` (GitHub token yang dapat membuat release dan mendorong tag/commit release). CI membangun kedua varian; runner CI tidak menjalankan inference GPU karena tidak memiliki GPU fisik.

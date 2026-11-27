@@ -1,67 +1,47 @@
-# --- Builder Stage ---
+FROM ghcr.io/astral-sh/uv:0.13.6 AS uv-bin
+
 FROM python:3.13-slim-bookworm AS builder
 
-# Install system dependencies - combined into one RUN to reduce layers
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    ca-certificates \
-    gnupg \
-    libgl1-mesa-glx \
-    libglib2.0-0 \
-    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+COPY --from=uv-bin /uv /uvx /usr/local/bin/
 
-# Install uv (fast package manager)
-ADD https://astral.sh/uv/install.sh /uv-installer.sh
-RUN sh /uv-installer.sh && rm /uv-installer.sh
-ENV PATH="/root/.local/bin/:$PATH"
+ENV UV_LINK_MODE=copy
 
-# Set working directory
 WORKDIR /app
 
-# Copy only requirements files and install CPU-safe dependencies
-COPY requirements-cpu.txt requirements-cpu-constraints.txt ./
+ARG TORCH_VARIANT=cpu
+
+# Resolve dependencies from the lockfile before adding the application source,
+# so code changes reuse the expensive dependency layer.
+COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --no-cache-dir \
-    --constraint requirements-cpu-constraints.txt \
-    --extra-index-url https://download.pytorch.org/whl/cpu \
-    --index-strategy unsafe-best-match \
-    -r requirements-cpu.txt \
-    --system
+    uv sync --locked --no-dev --no-install-project --extra ${TORCH_VARIANT}
 
-# --- Final Stage ---
-FROM python:3.13-slim-bookworm
+FROM python:3.13-slim-bookworm AS runtime
 
-# Install only runtime dependencies in a single layer
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1-mesa-glx \
-    libglib2.0-0 \
-    curl \
-    gnupg \
-    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* \
-    && npm cache clean --force
+ENV PATH="/app/.venv/bin:${PATH}" \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
-# Set working directory
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ffmpeg \
+        libglib2.0-0 \
+        libgomp1 \
+        tesseract-ocr \
+        tesseract-ocr-ind
+
 WORKDIR /app
 
-# Copy installed Python packages and app from builder
-COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
-COPY --from=builder /usr/local/bin /usr/local/bin
-
-# Copy only necessary application files
+COPY --from=builder /app/.venv /app/.venv
 COPY app /app/app
-COPY *.py /app/
-
+COPY dashboard.py main.py /app/
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
 
-# Expose Streamlit port
+RUN chmod +x /entrypoint.sh
+RUN python -c "import cv2, torch, whisper; print('torch', torch.__version__, 'cuda wheel:', torch.version.cuda)"
+
 EXPOSE 8501
 
-# Start Streamlit app
-CMD ["streamlit", "run", "dashboard.py", "--server.port=8501", "--server.address=0.0.0.0"]
+CMD ["/entrypoint.sh", "streamlit", "run", "dashboard.py", "--server.port=8501", "--server.address=0.0.0.0"]

@@ -1,0 +1,61 @@
+name: Docker Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing semantic-release tag to build and publish
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-push:
+    name: Publish ${{ matrix.variant }} image
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [cpu, gpu]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Checkout release tag
+        id: release
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          MANUAL_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "release" ]]; then
+            tag="$RELEASE_TAG"
+          else
+            tag="$MANUAL_TAG"
+          fi
+          git rev-parse --verify "refs/tags/$tag" >/dev/null
+          git checkout --detach "$tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PUSH }}
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: TORCH_VARIANT=${{ matrix.variant }}
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/pdf-extractor:${{ matrix.variant == 'cpu' && 'latest' || 'latest-gpu' }}
+            ${{ secrets.DOCKER_USERNAME }}/pdf-extractor:${{ steps.release.outputs.tag }}-${{ matrix.variant }}
+          cache-from: type=gha,scope=pdf-extractor-${{ matrix.variant }}
+          cache-to: type=gha,scope=pdf-extractor-${{ matrix.variant }},mode=max

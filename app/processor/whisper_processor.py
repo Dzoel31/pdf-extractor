@@ -31,7 +31,7 @@ class WhisperProcessor:
 
     def __init__(
         self,
-        model_name: str = "large",
+        model_name: str = "large-v3",
         language: str = "en",
         device: str = "auto",
         overwrite: bool = False,

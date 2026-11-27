@@ -18,7 +18,6 @@ from azure.ai.documentintelligence.models import AnalyzeDocumentRequest
 from app.utils.helper import (
     log_process,
     check_json_file_exists,
-    ensure_temp_dir,
 )
 from app.config import TEMP_DIR, OUTPUT_DIR
 from app.logging_config import get_logger

@@ -7,15 +7,24 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: dzuladj/pdf-extractor:dev
+      args:
+        TORCH_VARIANT: cpu
+    image: dzuladj/pdf-extractor:cpu-dev
     ports:
       - "8501:8501"
     volumes:
       - pdf-extractor-models:/app/app/models
-    command:
-      - /bin/sh
-      - -c
-      - >
-        /entrypoint.sh streamlit run dashboard.py
-        --server.port=8501
-        --server.address=0.0.0.0
+
+  pdf-extractor-gpu:
+    profiles: [gpu]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        TORCH_VARIANT: gpu
+    image: dzuladj/pdf-extractor:gpu-dev
+    gpus: all
+    ports:
+      - "8502:8501"
+    volumes:
+      - pdf-extractor-models:/app/app/models
