@@ -13,7 +13,7 @@ docker run --rm -p 8501:8501 \
   dzuladj/pdf-extractor:latest
 ```
 
-Buka <http://localhost:8501>. Model Whisper `large-v3` diunduh ketika transkripsi pertama dijalankan, bukan dimasukkan ke image. Volume menyimpan model agar tidak perlu diunduh ulang. Container juga menyiapkan model Docling saat pertama kali berjalan.
+Buka <http://localhost:8501>. Model Whisper `large-v3` diunduh ketika transkripsi pertama dijalankan dan model Docling juga diunduh pertama kali ketika digunakan untuk memproses file PDF. Setiap unduhan ditautkan ke volume Docker `pdf-extractor-models` agar tidak diunduh ulang di container berikutnya.
 
 Untuk NVIDIA GPU di mesin Linux dengan NVIDIA Container Toolkit, gunakan image `latest-gpu` dan port 8502:
 

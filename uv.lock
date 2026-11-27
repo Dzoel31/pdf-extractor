@@ -2042,7 +2042,7 @@ requires-dist = [
 provides-extras = ["cpu", "gpu", "windows"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "python-semantic-release", specifier = ">=10.5.3" }]
+dev = [{ name = "python-semantic-release", specifier = ">=10.7.0" }]
 
 [[package]]
 name = "pillow"
