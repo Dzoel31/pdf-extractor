@@ -471,40 +471,40 @@ wheels = [
 
 [package.optional-dependencies]
 cublas = [
-    { name = "nvidia-cublas", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu') or (extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu')" },
-    { name = "nvidia-cuda-nvrtc", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu') or (extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu')" },
+    { name = "nvidia-cublas", marker = "(platform_machine == 'aarch64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu' or extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu'" },
+    { name = "nvidia-cuda-nvrtc", marker = "(platform_machine == 'aarch64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu' or extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu'" },
 ]
 cudart = [
-    { name = "nvidia-cuda-runtime", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu') or (extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu')" },
+    { name = "nvidia-cuda-runtime", marker = "(platform_machine == 'aarch64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu' or extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu'" },
 ]
 cufft = [
-    { name = "nvidia-cufft", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu') or (extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu')" },
-    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu') or (extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu')" },
+    { name = "nvidia-cufft", marker = "(platform_machine == 'aarch64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu' or extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu'" },
+    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu' or extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu'" },
 ]
 cufile = [
-    { name = "nvidia-cufile", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu') or (extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu')" },
+    { name = "nvidia-cufile", marker = "(platform_machine == 'aarch64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu' or extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu'" },
 ]
 cupti = [
-    { name = "nvidia-cuda-cupti", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu') or (extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu')" },
+    { name = "nvidia-cuda-cupti", marker = "(platform_machine == 'aarch64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu' or extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu'" },
 ]
 cusolver = [
-    { name = "nvidia-cublas", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu') or (extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu')" },
-    { name = "nvidia-cusolver", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu') or (extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu')" },
-    { name = "nvidia-cusparse", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu') or (extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu')" },
-    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu') or (extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu')" },
+    { name = "nvidia-cublas", marker = "(platform_machine == 'aarch64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu' or extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu'" },
+    { name = "nvidia-cusolver", marker = "(platform_machine == 'aarch64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu' or extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu'" },
+    { name = "nvidia-cusparse", marker = "(platform_machine == 'aarch64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu' or extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu'" },
+    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu' or extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu'" },
 ]
 cusparse = [
-    { name = "nvidia-cusparse", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu') or (extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu')" },
-    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu') or (extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu')" },
+    { name = "nvidia-cusparse", marker = "(platform_machine == 'aarch64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu' or extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu'" },
+    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu' or extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu'" },
 ]
 nvjitlink = [
-    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu') or (extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu')" },
+    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu' or extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu'" },
 ]
 nvrtc = [
-    { name = "nvidia-cuda-nvrtc", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu') or (extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu')" },
+    { name = "nvidia-cuda-nvrtc", marker = "(platform_machine == 'aarch64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu' or extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu'" },
 ]
 nvtx = [
-    { name = "nvidia-nvtx", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu') or (extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu')" },
+    { name = "nvidia-nvtx", marker = "(platform_machine == 'aarch64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-13-pdf-extractor-cpu' or extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu'" },
 ]
 
 [[package]]
@@ -1958,7 +1958,7 @@ wheels = [
 
 [[package]]
 name = "pdf-extractor"
-version = "0.1.0"
+version = "1.0.0"
 source = { virtual = "." }
 dependencies = [
     { name = "accelerate" },
@@ -3174,19 +3174,19 @@ resolution-markers = [
     "sys_platform == 'darwin'",
 ]
 dependencies = [
-    { name = "cuda-bindings", marker = "(sys_platform == 'linux' and extra == 'extra-13-pdf-extractor-gpu') or (extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu')" },
-    { name = "cuda-toolkit", extra = ["cublas", "cudart", "cufft", "cufile", "cupti", "cusolver", "cusparse", "nvjitlink", "nvrtc", "nvtx"], marker = "(sys_platform == 'linux' and extra == 'extra-13-pdf-extractor-gpu') or (extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu')" },
+    { name = "cuda-bindings", marker = "(sys_platform == 'linux' or extra == 'extra-13-pdf-extractor-cpu') and extra == 'extra-13-pdf-extractor-gpu'" },
+    { name = "cuda-toolkit", extra = ["cublas", "cudart", "cufft", "cufile", "cupti", "cusolver", "cusparse", "nvjitlink", "nvrtc", "nvtx"], marker = "(sys_platform == 'linux' or extra == 'extra-13-pdf-extractor-cpu') and extra == 'extra-13-pdf-extractor-gpu'" },
     { name = "filelock", marker = "extra == 'extra-13-pdf-extractor-gpu'" },
     { name = "fsspec", marker = "extra == 'extra-13-pdf-extractor-gpu'" },
     { name = "jinja2", marker = "extra == 'extra-13-pdf-extractor-gpu'" },
     { name = "networkx", marker = "extra == 'extra-13-pdf-extractor-gpu'" },
-    { name = "nvidia-cudnn-cu13", marker = "(sys_platform == 'linux' and extra == 'extra-13-pdf-extractor-gpu') or (extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu')" },
-    { name = "nvidia-cusparselt-cu13", marker = "(sys_platform == 'linux' and extra == 'extra-13-pdf-extractor-gpu') or (extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu')" },
-    { name = "nvidia-nccl-cu13", marker = "(sys_platform == 'linux' and extra == 'extra-13-pdf-extractor-gpu') or (extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu')" },
-    { name = "nvidia-nvshmem-cu13", marker = "(sys_platform == 'linux' and extra == 'extra-13-pdf-extractor-gpu') or (extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu')" },
+    { name = "nvidia-cudnn-cu13", marker = "(sys_platform == 'linux' or extra == 'extra-13-pdf-extractor-cpu') and extra == 'extra-13-pdf-extractor-gpu'" },
+    { name = "nvidia-cusparselt-cu13", marker = "(sys_platform == 'linux' or extra == 'extra-13-pdf-extractor-cpu') and extra == 'extra-13-pdf-extractor-gpu'" },
+    { name = "nvidia-nccl-cu13", marker = "(sys_platform == 'linux' or extra == 'extra-13-pdf-extractor-cpu') and extra == 'extra-13-pdf-extractor-gpu'" },
+    { name = "nvidia-nvshmem-cu13", marker = "(sys_platform == 'linux' or extra == 'extra-13-pdf-extractor-cpu') and extra == 'extra-13-pdf-extractor-gpu'" },
     { name = "setuptools", marker = "extra == 'extra-13-pdf-extractor-gpu'" },
     { name = "sympy", marker = "extra == 'extra-13-pdf-extractor-gpu'" },
-    { name = "triton", marker = "(sys_platform == 'linux' and extra == 'extra-13-pdf-extractor-gpu') or (extra == 'extra-13-pdf-extractor-cpu' and extra == 'extra-13-pdf-extractor-gpu')" },
+    { name = "triton", marker = "(sys_platform == 'linux' or extra == 'extra-13-pdf-extractor-cpu') and extra == 'extra-13-pdf-extractor-gpu'" },
     { name = "typing-extensions", marker = "extra == 'extra-13-pdf-extractor-gpu'" },
 ]
 wheels = [
