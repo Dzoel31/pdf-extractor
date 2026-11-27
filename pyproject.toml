@@ -46,7 +46,7 @@ windows = [
 
 [dependency-groups]
 dev = [
-    "python-semantic-release>=10.5.3",
+    "python-semantic-release>=10.7.0",
 ]
 
 [tool.uv]
