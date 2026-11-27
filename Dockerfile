@@ -1,6 +1,6 @@
 FROM ghcr.io/astral-sh/uv:0.13.10 AS uv-bin
 
-FROM python:3.13-slim-bookworm AS builder
+FROM python:3.15-slim-bookworm AS builder
 
 COPY --from=uv-bin /uv /uvx /usr/local/bin/
 
@@ -16,7 +16,7 @@ COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --no-install-project --extra ${TORCH_VARIANT}
 
-FROM python:3.13-slim-bookworm AS runtime
+FROM python:3.15-slim-bookworm AS runtime
 
 ENV PATH="/app/.venv/bin:${PATH}" \
     PYTHONDONTWRITEBYTECODE=1 \
